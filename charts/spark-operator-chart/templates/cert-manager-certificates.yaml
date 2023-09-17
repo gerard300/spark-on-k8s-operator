@@ -1,0 +1,70 @@
+# NOTE -  Based on --> https://github.com/kubernetes/ingress-nginx/blob/main/charts/ingress-nginx/templates/admission-webhooks/cert-manager.yaml
+# NOTE - Certificate Attributes --> https://docs.oracle.com/cd/E24191_01/common/tutorials/authz_cert_attributes.html
+{{- $webhookSvc := printf "%s-webhook.%s" (include "spark-operator.fullname" .) .Release.Namespace -}}
+{{- if and .Values.webhook.enable .Values.webhook.certManager.enable -}}
+{{- if not .Values.webhook.certManager.issuerRef -}}
+# Create a selfsigned Issuer, in order to create a root CA certificate for
+# signing webhook serving certificates
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "spark-operator.fullname" . }}-self-signed-issuer
+  namespace: {{ .Release.Namespace }}
+spec:
+  selfSigned: {}
+---
+# Generate a CA Certificate used to sign certificates for the webhook
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "spark-operator.fullname" . }}-root-cert
+  namespace: {{ .Release.Namespace }}
+spec:
+  isCA: true
+  commonName: "ca.webhook.spark-operator" #REVIEW - What is the impact of the commonName?
+  secretName: {{ include "spark-operator.fullname" . }}-root-cert
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: {{ include "spark-operator.fullname" . }}-self-signed-issuer
+    kind: Issuer
+    group: cert-manager.io
+  duration: {{ .Values.webhook.certManager.rootCert.duration | default "87600h0m0s" | quote }}
+  subject:
+    organizations:
+      - spark-operator #REVIEW - What is the impact of the organization?
+---
+# Create an Issuer that uses the above generated CA certificate to issue certs
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "spark-operator.fullname" . }}-root-issuer
+  namespace: {{ .Release.Namespace }}
+spec:
+  ca:
+    secretName: {{ include "spark-operator.fullname" . }}-root-cert
+{{- end }}
+---
+# generate a server certificate for the apiservices to use
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "spark-operator.fullname" . }}-webhook-cert
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: {{ include "spark-operator.fullname" . }}-webhook-certs
+  duration: {{ .Values.webhook.certManager.webhookCert.duration | default "8760h0m0s" | quote }}
+  issuerRef:
+    {{- if .Values.webhook.certManager.issuerRef }}
+    {{- toYaml .Values.webhook.certManager.issuerRef | nindent 4 }}
+    {{- else }}
+    name: {{ include "spark-operator.fullname" . }}-root-issuer
+    {{- end }}
+  dnsNames: #REVIEW - What is the impact of the DNS Names?
+    - {{ $webhookSvc }}.svc
+    - {{ $webhookSvc }}.svc.cluster.local
+  subject:
+    organizations:
+      - spark-operator #REVIEW - What is the impact of the organization?
+{{- end -}}

@@ -84,8 +84,19 @@ volumes: []
 volumeMounts: []
 
 webhook:
+  # -- Enable cert manager for self-signed CA certificates
+  certManager:
+    enable: true
+    rootCert:
+      duration: 87600h0m0s
+    issuerRef: {} # If empty a new Issuer within the namespace will be created
+      # name: self-signed-issuer
+      # kind: Issuer
+      # group: cert-manager.io
+    webhookCert:
+      duration: 87600h0m0s
   # -- Enable webhook server
-  enable: false
+  enable: true
   # -- Webhook service port
   port: 8080
   # -- The webhook server will only operate on namespaces with this label, specified in the form key1=value1,key2=value2.
